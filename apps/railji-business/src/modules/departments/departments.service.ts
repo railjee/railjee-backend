@@ -102,13 +102,8 @@ export class DepartmentsService {
       const filter = { departmentId, isActive: true, ...query };
 
       // Fetch from database
+      // An empty list is a valid result (department has no materials yet), not a 404
       const materials = await this.materialModel.find(filter).exec();
-
-      if (!materials || materials.length === 0) {
-        throw new NotFoundException(
-          `No materials found for department ${departmentId}`,
-        );
-      }
 
       // Cache the result
       this.cacheService.set(cacheKey, materials, this.CACHE_TTL);

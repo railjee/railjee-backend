@@ -64,17 +64,6 @@ export const APP_CONSTANTS = {
     LONG: 3600, // 1 hour
   },
 
-  DEPARTMENTS: [
-    'civil',
-    'commercial',
-    'electrical',
-    'mechanical',
-    'operating',
-    'others',
-    'personnel',
-    'signal-telecom',
-  ],
-
   // Authentication Exclusions (routes that don't require JWT authentication)
   AUTH_EXCLUDED_ROUTES: [
     '/business/v1/health',
@@ -94,6 +83,5 @@ export const {
   EXAM_MODE,
   PAPER_STATUS,
   QUESTION_TYPES,
-  DEPARTMENTS,
   AUTH_EXCLUDED_ROUTES,
 } = APP_CONSTANTS;
