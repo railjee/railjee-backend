@@ -107,7 +107,6 @@ export class RazorpayGateway implements IPaymentGateway {
       .update(payload)
       .digest('hex');
 
-    this.logger.debug(`Expected: ${expectedSignature}, Received: ${signature}`);
     return expectedSignature === signature;
   }
 

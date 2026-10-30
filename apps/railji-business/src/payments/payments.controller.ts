@@ -18,6 +18,7 @@ import { CreateOrderDto } from './dto/create-order.dto';
 import { VerifyPaymentDto } from './dto/verify-payment.dto';
 import { MissingSignatureException } from './exceptions/payment.exceptions';
 import { SharedUsersService } from '@railji/shared';
+import { getClientContext, maskId } from '../modules/meta/tracking.utils';
 
 @Controller('payments')
 export class PaymentsController {
@@ -45,9 +46,10 @@ export class PaymentsController {
         createOrderDto.planId,
         userId,
         createOrderDto.metadata || {},
+        { user, client: getClientContext(req) },
       );
 
-      this.logger.log(`Order created successfully: ${result.orderId}`);
+      this.logger.log(`Order created successfully: ${maskId(result.orderId)}`);
       return result;
     } catch (error) {
       this.logger.error(`Failed to create order: ${error.message}`, error.stack);
@@ -77,8 +79,9 @@ export class PaymentsController {
     @Req() req: RawBodyRequest<Request>,
     @Headers('x-razorpay-signature') signature: string,
   ) {
-    this.logger.log(`Webhook received - Body: ${JSON.stringify(req.body)}, Signature: ${signature}`);
-    
+    // Don't log the body (customer email, phone, payment details) or the signature.
+    this.logger.log(`Webhook received - event: ${(req.body as any)?.event ?? 'unknown'}`);
+
     if (!signature) {
       throw new MissingSignatureException();
     }

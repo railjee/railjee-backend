@@ -25,6 +25,7 @@ export class PaymentTransactionService {
       customerPhone?: string;
       ipAddress?: string;
       userAgent?: string;
+      tracking?: Record<string, any>;
     },
   ) {
     return this.paymentModel.create({
@@ -94,6 +95,11 @@ export class PaymentTransactionService {
 
   async getTransactionsByOrderId(orderId: string) {
     return this.paymentModel.find({ orderId }).sort({ createdAt: -1 }).exec();
+  }
+
+  /** The record written at order creation (holds userId, plan metadata and tracking ids). */
+  async getOrderTransaction(orderId: string) {
+    return this.paymentModel.findOne({ orderId, type: TransactionType.ORDER }).exec();
   }
 
   async getTransactionsByPaymentId(paymentId: string) {

@@ -79,6 +79,10 @@ export class PaymentTransaction {
 
   @Prop()
   userAgent?: string;
+
+  /** Meta browser ids (fbp, fbc) and the internal flag, captured at order time for the Purchase event. */
+  @Prop({ type: Object })
+  tracking?: Record<string, any>;
 }
 
 export const PaymentTransactionSchema = SchemaFactory.createForClass(PaymentTransaction);

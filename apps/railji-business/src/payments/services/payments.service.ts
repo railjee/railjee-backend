@@ -4,7 +4,9 @@ import { Model } from 'mongoose';
 import { PaymentGatewayFactory } from './payment-gateway.factory';
 import { PaymentTransactionService } from './payment-transaction.service';
 import { InvalidWebhookException } from '../exceptions/payment.exceptions';
-import { SharedSubscriptionsService, GrantAccessDto, Plan } from '@railji/shared';
+import { SharedSubscriptionsService, GrantAccessDto, Plan, User } from '@railji/shared';
+import { MetaCapiService } from '../../modules/meta/meta-capi.service';
+import { ClientContext, logEvent, maskId } from '../../modules/meta/tracking.utils';
 
 @Injectable()
 export class PaymentsService {
@@ -16,9 +18,25 @@ export class PaymentsService {
     private readonly subscriptionsService: SharedSubscriptionsService,
     @InjectModel(Plan.name)
     private planModel: Model<Plan>,
+    @InjectModel(User.name)
+    private userModel: Model<User>,
+    private readonly metaCapi: MetaCapiService,
   ) {}
 
-  async createOrder(planId: string, userId: string, metadata: Record<string, any> = {}) {
+  async createOrder(
+    planId: string,
+    userId: string,
+    rawMetadata: Record<string, any> = {},
+    context: { user?: User; client?: ClientContext } = {},
+  ) {
+    // Tracking ids from the browser go on our order record, not into Razorpay notes.
+    const { fbp, fbc, internal, ...metadata } = rawMetadata;
+    const tracking = {
+      fbp: typeof fbp === 'string' ? fbp.slice(0, 200) : undefined,
+      fbc: typeof fbc === 'string' ? fbc.slice(0, 200) : undefined,
+      internal: internal === true ? true : undefined,
+    };
+
     try {
       this.logger.log(`Creating order for plan: ${planId}`);
 
@@ -56,15 +74,55 @@ export class PaymentsService {
 
       this.logger.log(`Creating order with gateway: ${gatewayType}`);
       const order = await gateway.createOrder(plan.price, plan.currency, orderMetadata);
-      this.logger.log(`Gateway order created: ${order.orderId}`);
+      this.logger.log(`Gateway order created: ${maskId(order.orderId)}`);
 
       await this.transactionService.logOrderCreation(gatewayType, order, {
         userId,
         customerEmail: metadata.email,
         customerPhone: metadata.phone,
+        ipAddress: context.client?.ip,
+        userAgent: context.client?.userAgent,
+        tracking,
       });
 
-      this.logger.log(`Transaction logged for order: ${order.orderId}`);
+      this.logger.log(`Transaction logged for order: ${maskId(order.orderId)}`);
+      logEvent(this.logger, 'payment_event', {
+        type: 'order_created',
+        order_id: maskId(order.orderId),
+        plan_id: plan.planId,
+        amount: order.amount,
+        currency: order.currency,
+      });
+
+      const user = context.user;
+      const excluded = this.metaCapi.isExcluded({
+        internalFlag: tracking.internal,
+        email: user?.email,
+        userType: user?.userType,
+        trackingExcluded: user?.trackingExcluded,
+      });
+      if (!excluded) {
+        this.metaCapi.send({
+          eventName: 'InitiateCheckout',
+          // The browser copy (Phase 3) uses the same order id.
+          eventId: order.orderId,
+          eventSourcePath: '/subscription',
+          client: context.client,
+          email: user?.email,
+          externalId: userId,
+          fbp: tracking.fbp ?? user?.attribution?.fbp,
+          fbc: tracking.fbc ?? user?.attribution?.fbc,
+          customData: {
+            value: order.amount,
+            currency: order.currency,
+            content_ids: [plan.planId],
+            content_category: plan.departmentId,
+            content_type: 'product',
+            num_items: 1,
+          },
+        });
+      }
+
       return order;
     } catch (error) {
       this.logger.error(`Error in createOrder: ${error.message}`, error.stack);
@@ -73,7 +131,7 @@ export class PaymentsService {
   }
 
   async verifyPayment(orderId: string, paymentId: string, signature: string): Promise<boolean> {
-    this.logger.log(`Verifying payment: ${paymentId}`);
+    this.logger.log(`Verifying payment: ${maskId(paymentId)}`);
 
     const gateway = this.gatewayFactory.getGateway();
     const gatewayType = this.gatewayFactory.getActiveGatewayType();
@@ -152,16 +210,82 @@ export class PaymentsService {
     }
 
     const event = gateway.parseWebhookEvent(payload);
-    this.logger.log(`Webhook event: ${event.event}`);
+    logEvent(this.logger, 'payment_event', {
+      type: event.event,
+      order_id: maskId(event.orderId),
+      payment_id: maskId(event.paymentId),
+      amount: event.amount,
+    });
 
     await this.transactionService.logWebhookEvent(gatewayType, event.event, event.data);
 
     // Handle payment captured event
     if (event.event === 'payment.captured' && event.orderId && event.paymentId) {
+      // Before the access grant: the money is captured even if the grant fails.
+      // Fire-and-forget, so it never delays the webhook response.
+      await this.trackPurchase(event.orderId, event.paymentId, event.amount, event.data);
       await this.grantDepartmentAccessFromOrder(event.orderId, event.paymentId, gatewayType);
     }
 
     return { success: true, event: event.event };
+  }
+
+  /**
+   * Meta Purchase for a captured payment. event_id is the payment id, so
+   * Razorpay webhook retries are deduped by Meta. Only reads from our DB
+   * (two indexed lookups) and never throws.
+   */
+  private async trackPurchase(
+    orderId: string,
+    paymentId: string,
+    amount: number | undefined,
+    data: Record<string, any>,
+  ): Promise<void> {
+    try {
+      const order = await this.transactionService.getOrderTransaction(orderId);
+      const user = order?.userId
+        ? await this.userModel.findOne({ userId: order.userId }).exec()
+        : null;
+
+      const excluded = this.metaCapi.isExcluded({
+        internalFlag: order?.tracking?.internal,
+        email: user?.email,
+        userType: user?.userType,
+        trackingExcluded: user?.trackingExcluded,
+      });
+      if (excluded) {
+        logEvent(this.logger, 'payment_event', {
+          type: 'purchase_not_tracked',
+          payment_id: maskId(paymentId),
+          reason: 'internal',
+        });
+        return;
+      }
+
+      const currency = String(data?.payment?.entity?.currency || order?.currency || 'INR').toUpperCase();
+
+      this.metaCapi.send({
+        eventName: 'Purchase',
+        eventId: paymentId,
+        eventSourcePath: '/subscription',
+        client: { ip: order?.ipAddress, userAgent: order?.userAgent },
+        email: user?.email,
+        externalId: order?.userId,
+        fbp: order?.tracking?.fbp ?? user?.attribution?.fbp,
+        fbc: order?.tracking?.fbc ?? user?.attribution?.fbc,
+        customData: {
+          value: amount ?? order?.amount,
+          currency,
+          content_ids: order?.metadata?.planId ? [order.metadata.planId] : undefined,
+          content_category: order?.metadata?.departmentId,
+          content_type: 'product',
+          num_items: 1,
+          order_id: orderId,
+        },
+      });
+    } catch (error) {
+      this.logger.warn(`Purchase tracking skipped for ${maskId(paymentId)}: ${error.message}`);
+    }
   }
 
   async getTransaction(orderId: string) {

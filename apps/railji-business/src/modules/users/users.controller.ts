@@ -1,14 +1,18 @@
 import { Controller, Get, Post, Body, Param, HttpStatus, HttpCode, Req } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
+import { getClientContext } from '../meta/tracking.utils';
 
 @Controller('users')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
   @Post()
-  async createUser(@Body() createUserDto: CreateUserDto) {
-    const { user, created } = await this.usersService.createOrGetUser(createUserDto);
+  async createUser(@Body() createUserDto: CreateUserDto, @Req() req: any) {
+    const { user, created } = await this.usersService.createOrGetUser(
+      createUserDto,
+      getClientContext(req),
+    );
     return {
       statusCode: created ? HttpStatus.CREATED : HttpStatus.OK,
       message: created ? 'User created successfully' : 'User already exists',
