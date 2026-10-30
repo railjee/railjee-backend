@@ -55,8 +55,9 @@ async function bootstrap() {
       `Railji Business running on http://0.0.0.0:${config.app.port}`,
       'Bootstrap',
     );
+    // Never log the whole config: it holds the database URI and secrets.
     loggerService.log(
-      `Configuration: ${JSON.stringify(config, null, 2)}`,
+      `Environment: ${config.app.env}, Meta CAPI: ${config.meta.pixelId && config.meta.accessToken ? 'on' : 'off'}${config.meta.testEventCode ? ' (test mode)' : ''}`,
       'Bootstrap',
     );
   });

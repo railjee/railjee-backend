@@ -4,6 +4,7 @@ import { UsersController } from './users.controller';
 import { UsersService } from './users.service';
 import { User, UserSchema } from '@libs';
 import { SharedCommonModule } from '@railji/shared';
+import { MetaModule } from '../meta/meta.module';
 
 @Module({
   imports: [
@@ -11,6 +12,7 @@ import { SharedCommonModule } from '@railji/shared';
       { name: User.name, schema: UserSchema },
     ]),
     SharedCommonModule,
+    MetaModule,
   ],
   controllers: [UsersController],
   providers: [UsersService],

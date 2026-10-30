@@ -32,6 +32,18 @@ export class User extends Document {
 
   @Prop()
   lastLoggedIn?: Date;
+
+  /** 'email' or 'google', set when the account is created. */
+  @Prop()
+  authProvider?: string;
+
+  /** First-touch ad attribution at signup: utm_*, fbclid, fbc, fbp, landingPage, firstSeenAt. */
+  @Prop({ type: Object })
+  attribution?: Record<string, string>;
+
+  /** Our own test account: no Meta events are sent for it. */
+  @Prop()
+  trackingExcluded?: boolean;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

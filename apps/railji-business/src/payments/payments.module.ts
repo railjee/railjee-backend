@@ -10,6 +10,7 @@ import {
   PaymentTransactionSchema,
 } from './schemas/payment-transaction.schema';
 import { PAYMENT_GATEWAY_TOKENS } from './config/payment.config';
+import { MetaModule } from '../modules/meta/meta.module';
 import {
   SharedSubscriptionsService,
   SharedUsersService,
@@ -31,6 +32,7 @@ import {
       { name: User.name, schema: UserSchema },
     ]),
     SharedCommonModule,
+    MetaModule,
   ],
   controllers: [PaymentsController],
   providers: [

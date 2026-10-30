@@ -24,6 +24,22 @@ export const config = {
     level: process.env.LOG_LEVEL || 'debug',
     maxFiles: process.env.LOG_MAX_FILES || '14',
   },
+  meta: {
+    pixelId: process.env.META_PIXEL_ID || '',
+    accessToken: process.env.META_CAPI_ACCESS_TOKEN || '',
+    testEventCode: process.env.META_TEST_EVENT_CODE || '',
+    graphApiVersion: process.env.META_GRAPH_API_VERSION || 'v26.0',
+    timeoutMs: parseInt(process.env.META_CAPI_TIMEOUT_MS || '3000', 10),
+  },
+  tracking: {
+    siteUrl: process.env.SITE_URL || 'https://railjee.in',
+    forwardSecret: process.env.INTERNAL_FORWARD_SECRET || '',
+    // Comma list; an entry starting with "@" matches the whole domain.
+    internalEmails: (process.env.INTERNAL_EMAILS || '')
+      .split(',')
+      .map((e) => e.trim().toLowerCase())
+      .filter(Boolean),
+  },
   payment: {
     gateway: process.env.PAYMENT_GATEWAY || 'razorpay',
     razorpay: {
